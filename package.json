@@ -1,0 +1,37 @@
+{
+	"name": "hotel-booking",
+	"module": "src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"check": "biome check --write .",
+		"check-types": "tsc -noEmit",
+		"dev": "bun --watch src/app.ts",
+		"start": "bun dist/app.js",
+		"build": "bun build src/app.ts --outdir ./dist --target bun --minify --sourcemap",
+		"db:migrate": "bun prisma migrate dev",
+		"db:generate": "bun prisma generate",
+		"db:reset": "bun prisma migrate reset"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.11",
+		"@types/bcryptjs": "^3.0.0",
+		"@types/bun": "latest",
+		"@types/express": "^5.0.6",
+		"@types/jsonwebtoken": "^9.0.10",
+		"@types/pg": "^8.16.0",
+		"prisma": "^7.3.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@prisma/adapter-pg": "^7.3.0",
+		"@prisma/client": "^7.3.0",
+		"bcryptjs": "^3.0.3",
+		"express": "^5.2.1",
+		"jsonwebtoken": "^9.0.3",
+		"pg": "^8.17.2",
+		"zod": "^4.3.5"
+	}
+}

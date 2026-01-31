@@ -1,8 +1,9 @@
+import { STATUS } from 'generated/prisma/enums'
 import { z } from 'zod'
 
 const passwordSchema = z
 	.string()
-	.min(8, { message: 'Password must be at least 8 characters long.' })
+	// .min(8, { message: 'Password must be at least 8 characters long.' })
 	// .regex(/[A-Z]/, { message: 'Must contain at least one uppercase letter.' })
 	// .regex(/[a-z]/, { message: 'Must contain at least one lowercase letter.' })
 	// .regex(/[0-9]/, { message: 'Must contain at least one number.' })
@@ -15,23 +16,23 @@ const ROLES = z.enum(['customer', 'owner'])
 
 export const signupSchema = z.object({
 	name: z.string().min(2),
-	email: z.email(),
+	email: z.email().toLowerCase(),
 	password: passwordSchema,
 	role: ROLES.optional(),
 	phone: z.string().max(20).min(10).optional(),
 })
 
 export const signinSchema = z.object({
-	email: z.email(),
+	email: z.email().toLowerCase(),
 	password: passwordSchema,
 })
 
 export const createHotelSchema = z.object({
 	name: z.string().min(2),
-	description: z.string().min(10).max(1000),
+	description: z.string().optional(),
 	city: z.string().min(2),
 	country: z.string().min(2),
-	amenities: z.array(z.string()),
+	amenities: z.array(z.string()).optional(),
 })
 
 export const createRoomSchema = z.object({
@@ -41,7 +42,7 @@ export const createRoomSchema = z.object({
 	maxOccupancy: z.number().min(1),
 })
 
-export const searchHotelsSchema = z
+export const searchHotelsQuerySchema = z
 	.object({
 		city: z.string().optional(),
 		country: z.string().optional(),
@@ -61,6 +62,7 @@ export const searchHotelsSchema = z
 			message: 'minPrice must be less than or equal to maxPrice',
 		},
 	)
+
 export const hotelSearchResultSchema = z.object({
 	id: z.string(),
 	name: z.string(),
@@ -78,21 +80,22 @@ export type HotelSearchResult = z.infer<typeof hotelSearchResultSchema>
 export const bookingSchema = z
 	.object({
 		roomId: z.string(),
-		checkInDate: z.string().refine((date) => !Number.isNaN(Date.parse(date)), {
-			message: 'Invalid date format for checkInDate',
-		}),
-		checkOutDate: z.string().refine((date) => !Number.isNaN(Date.parse(date)), {
-			message: 'Invalid date format for checkOutDate',
-		}),
-		guest: z.number().min(1),
+		checkInDate: z.string().transform((str) => new Date(str)),
+		checkOutDate: z.string().transform((str) => new Date(str)),
+		guests: z.number().int().positive(),
 	})
-	.refine(
-		(data) => {
-			const checkIn = new Date(data.checkInDate)
-			const checkOut = new Date(data.checkOutDate)
-			return checkIn < checkOut
-		},
-		{
-			message: 'INVALID_DATES',
-		},
-	)
+	.refine((data) => data.checkInDate < data.checkOutDate, {
+		message: 'INVALID_DATES',
+	})
+
+export const searchBookingsQuerySchema = z.object({
+	status: z.enum(STATUS).optional(),
+})
+
+export const createReviewSchema = z.object({
+	bookingId: z.string({
+		error: 'INVALID_BOOKING_ID',
+	}),
+	rating: z.number().min(1).max(5).int(),
+	comment: z.string().optional(),
+})

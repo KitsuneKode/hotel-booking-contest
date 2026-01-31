@@ -11,10 +11,9 @@ import config from '@/utils/config'
 const router = express.Router()
 
 router.post('/auth/signup', async (req, res, next) => {
-	const { success, data: signupData, error } = signupSchema.safeParse(req.body)
+	const { success, data: signupData } = signupSchema.safeParse(req.body)
 
 	if (!success) {
-		console.log(error)
 		res.status(400).json(errorResponse(ErrorCodes.INVALID_REQUEST))
 		return
 	}
@@ -28,13 +27,14 @@ router.post('/auth/signup', async (req, res, next) => {
 			data: {
 				email,
 				name,
-				password_hash: passwordHash,
+				passwordHash,
 				...(phone ? { phone } : {}),
 				...(role ? { role } : {}),
 			},
 			omit: {
 				created_at: true,
-				password_hash: true,
+				updated_at: true,
+				passwordHash: true,
 			},
 		})
 
@@ -72,7 +72,7 @@ router.post('/auth/login', async (req, res, next) => {
 			res.status(401).json(errorResponse(ErrorCodes.INVALID_CREDENTIALS))
 			return
 		}
-		const passwordMatch = await bcrypt.compare(password, user.password_hash)
+		const passwordMatch = await bcrypt.compare(password, user.passwordHash)
 
 		if (!passwordMatch) {
 			res.status(401).json(errorResponse(ErrorCodes.INVALID_CREDENTIALS))
@@ -84,7 +84,7 @@ router.post('/auth/login', async (req, res, next) => {
 			config.JWT_SECRET,
 		)
 
-		const { password_hash, created_at, phone, ...requiredUserData } = user
+		const { passwordHash, created_at, phone, ...requiredUserData } = user
 
 		res.status(200).json(
 			successResponse({

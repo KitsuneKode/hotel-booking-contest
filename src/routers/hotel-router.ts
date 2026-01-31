@@ -8,7 +8,7 @@ import {
 	createHotelSchema,
 	createRoomSchema,
 	type HotelSearchResult,
-	searchHotelsSchema,
+	searchHotelsQuerySchema,
 } from '@/types'
 import { errorResponse, successResponse } from '@/utils'
 
@@ -22,16 +22,16 @@ router.post('/hotels', authorizeRole('owner'), async (req, res, next) => {
 	} = createHotelSchema.safeParse(req.body)
 
 	if (!success) {
-		console.log(error)
+		console.error(error)
 		res.status(400).json(errorResponse(ErrorCodes.INVALID_REQUEST))
 		return
 	}
 
 	try {
 		const { name, description, city, country, amenities } = hotelData
-		const ownerId = req.userId
+		const userId = req.userId
 
-		if (!ownerId) {
+		if (!userId) {
 			throw new Error(ErrorCodes.UNAUTHORIZED)
 		}
 
@@ -41,11 +41,12 @@ router.post('/hotels', authorizeRole('owner'), async (req, res, next) => {
 				description,
 				city,
 				country,
-				owner_id: ownerId,
-				amenities,
+				ownerId: userId,
+				amenities: amenities || [],
 			},
 			omit: {
 				created_at: true,
+				updated_at: true,
 			},
 		})
 
@@ -61,23 +62,18 @@ router.post(
 	async (req, res, next) => {
 		const hotelId = req.params.hotelId as string
 
-		const {
-			success,
-			data: roomData,
-			error,
-		} = createRoomSchema.safeParse(req.body)
+		const { success, data: roomData } = createRoomSchema.safeParse(req.body)
 
 		if (!success || !hotelId) {
-			console.log(error)
 			res.status(400).json(errorResponse(ErrorCodes.INVALID_REQUEST))
 			return
 		}
 
 		try {
 			const { roomType, roomNumber, maxOccupancy, pricePerNight } = roomData
-			const ownerId = req.userId
+			const userId = req.userId
 
-			if (!ownerId) {
+			if (!userId) {
 				throw new Error(ErrorCodes.UNAUTHORIZED)
 			}
 
@@ -91,21 +87,22 @@ router.post(
 				if (!existingHotel) {
 					res.status(404).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))
 					return
-				} else if (existingHotel.owner_id !== ownerId) {
+				} else if (existingHotel.ownerId !== userId) {
 					res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
 					return
 				}
 
 				const newRoom = await tx.rooms.create({
 					data: {
-						room_type: roomType,
-						room_number: roomNumber,
-						max_occupancy: maxOccupancy,
-						price_per_night: pricePerNight,
-						hotel_id: hotelId,
+						roomType,
+						roomNumber,
+						maxOccupancy,
+						pricePerNight,
+						hotelId,
 					},
 					omit: {
 						created_at: true,
+						updated_at: true,
 					},
 				})
 				res.status(201).json(successResponse(newRoom))
@@ -122,9 +119,8 @@ router.post(
 	},
 
 	router.get('/hotels', async (req, res, next) => {
-		const { success, data: searchQueryData } = searchHotelsSchema.safeParse(
-			req.query,
-		)
+		const { success, data: searchQueryData } =
+			searchHotelsQuerySchema.safeParse(req.query)
 
 		if (!success) {
 			res.status(400).json(errorResponse(ErrorCodes.INVALID_REQUEST))
@@ -141,19 +137,19 @@ router.post(
         h.city,
         h.country,
         h.amenities,
-        h.rating::float as rating,
-        h.total_reviews as "totalReviews",
-        MIN(r.price_per_night)::float as "minPricePerNight"
+        h.rating,
+        h."totalReviews",
+        MIN(r."pricePerNight")::float as "minPricePerNight"
       FROM hotels h
-      INNER JOIN rooms r ON h.id = r.hotel_id
+      INNER JOIN rooms r ON h.id = r."hotelId"
       WHERE 1=1
         ${city ? Prisma.sql`AND LOWER(h.city) = LOWER(${city})` : Prisma.empty}
         ${country ? Prisma.sql`AND LOWER(h.country) = LOWER(${country})` : Prisma.empty}
         ${minRating ? Prisma.sql`AND h.rating >= ${minRating}::decimal` : Prisma.empty}
-      GROUP BY h.id, h.name, h.description, h.city, h.country, h.amenities, h.rating, h.total_reviews
+      GROUP BY h.id, h.name, h.description, h.city, h.country, h.amenities, h.rating, h."totalReviews"
       HAVING 1=1
-        ${minPrice ? Prisma.sql`AND MIN(r.price_per_night) >= ${minPrice}::decimal` : Prisma.empty}
-        ${maxPrice ? Prisma.sql`AND MIN(r.price_per_night) <= ${maxPrice}::decimal` : Prisma.empty}
+        ${minPrice ? Prisma.sql`AND MIN(r."pricePerNight") >= ${minPrice}::decimal` : Prisma.empty}
+        ${maxPrice ? Prisma.sql`AND MIN(r."pricePerNight") <= ${maxPrice}::decimal` : Prisma.empty}
       ORDER BY h.rating DESC, "minPricePerNight" ASC
     `
 			res.status(200).json(successResponse(hotels))
@@ -171,12 +167,13 @@ router.get('/hotels/:hotelId', async (req, res, next) => {
 			include: {
 				rooms: {
 					omit: {
-						hotel_id: true,
+						hotelId: true,
 						created_at: true,
+						updated_at: true,
 					},
 				},
 			},
-			omit: { created_at: true },
+			omit: { created_at: true, updated_at: true },
 		})
 		if (!hotel) {
 			res.status(404).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))

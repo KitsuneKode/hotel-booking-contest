@@ -16,75 +16,80 @@ datasource db {
 }
 
 model Users {
-  id            String     @id @default(cuid())
-  name          String
-  email         String     @unique
-  password_hash String
-  role          ROLES      @default(customer)
-  phone         String?    @db.VarChar(20)
-  created_at    DateTime   @default(now())
-  hotels        Hotels[]
-  bookings      Bookings[]
-  reviews       Reviews[]
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         ROLES      @default(customer)
+  phone        String?    @db.VarChar(20)
+  hotels       Hotels[]
+  bookings     Bookings[]
+  reviews      Reviews[]
+  created_at   DateTime   @default(now())
+  updated_at   DateTime   @updatedAt
 
   @@map("users")
 }
 
 model Hotels {
-  id            String     @id @default(cuid())
-  owner         Users      @relation(fields: [owner_id], references: [id])
-  owner_id      String
-  name          String
-  description   String?
-  city          String     @db.VarChar(100)
-  country       String     @db.VarChar(100)
-  amenities     Json       @default("[]") @db.JsonB
-  rating        Decimal    @default(0.0) @db.Decimal(2, 1)
-  total_reviews Int        @default(0)
-  created_at    DateTime   @default(now())
-  rooms         Rooms[]
-  bookings      Bookings[]
-  reviews       Reviews[]
+  id           String     @id @default(cuid())
+  owner        Users      @relation(fields: [ownerId], references: [id])
+  ownerId      String
+  name         String
+  description  String?
+  city         String     @db.VarChar(100)
+  country      String     @db.VarChar(100)
+  amenities    Json       @default("[]") @db.JsonB
+  rating       Decimal    @default(0.0) @db.Decimal(2, 1)
+  totalReviews Int        @default(0)
+  rooms        Rooms[]
+  bookings     Bookings[]
+  reviews      Reviews[]
+  created_at   DateTime   @default(now())
+  updated_at   DateTime   @updatedAt
 
   @@map("hotels")
 }
 
 model Rooms {
-  id              String     @id @default(cuid())
-  hotel           Hotels     @relation(fields: [hotel_id], references: [id], onDelete: Cascade)
-  hotel_id        String
-  room_number     String     @db.VarChar(50)
-  room_type       String     @db.VarChar(100)
-  price_per_night Decimal    @db.Decimal(10, 2)
-  max_occupancy   Int
-  created_at      DateTime   @default(now())
-  bookings        Bookings[]
+  id            String     @id @default(cuid())
+  hotel         Hotels     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotelId       String
+  roomNumber    String     @db.VarChar(50)
+  roomType      String     @db.VarChar(100)
+  pricePerNight Decimal    @db.Decimal(10, 2)
+  maxOccupancy  Int
+  bookings      Bookings[]
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
 
-  @@unique([hotel_id, room_number])
+  @@unique([hotelId, roomNumber])
   @@map("rooms")
 }
 
 model Bookings {
   id String @id @default(cuid())
 
-  user    Users  @relation(fields: [user_id], references: [id])
-  user_id String
+  user   Users  @relation(fields: [userId], references: [id])
+  userId String
 
-  hotel    Hotels @relation(fields: [hotel_id], references: [id])
-  hotel_id String
+  hotel   Hotels @relation(fields: [hotelId], references: [id])
+  hotelId String
 
-  room    Rooms  @relation(fields: [room_id], references: [id])
-  room_id String
+  room   Rooms  @relation(fields: [roomId], references: [id])
+  roomId String
 
-  check_in_date  DateTime @db.Date
-  check_out_date DateTime @db.Date
+  checkInDate  DateTime @db.Date
+  checkOutDate DateTime @db.Date
 
-  guests       Int
-  total_price  Decimal   @db.Decimal(10, 2)
-  status       STATUS    @default(confirmed)
-  cancelled_at DateTime?
-  booking_date DateTime  @default(now())
-  reviews      Reviews[]
+  guests      Int
+  totalPrice  Decimal   @db.Decimal(10, 2)
+  status      STATUS    @default(confirmed)
+  cancelledAt DateTime?
+  bookingDate DateTime  @default(now())
+  reviews     Reviews?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
   @@map("bookings")
 }
@@ -92,21 +97,22 @@ model Bookings {
 model Reviews {
   id String @id @default(cuid())
 
-  user    Users  @relation(fields: [user_id], references: [id])
-  user_id String
+  user   Users  @relation(fields: [userId], references: [id])
+  userId String
 
-  hotel    Hotels @relation(fields: [hotel_id], references: [id])
-  hotel_id String
+  hotel   Hotels @relation(fields: [hotelId], references: [id])
+  hotelId String
 
-  booking    Bookings @relation(fields: [booking_id], references: [id])
-  booking_id String
+  booking   Bookings @relation(fields: [bookingId], references: [id])
+  bookingId String   @unique
 
   rating  Int
   comment String?
 
   created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
-  @@unique([user_id, booking_id])
+  @@unique([userId, bookingId])
   @@map("reviews")
 }
 

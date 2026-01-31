@@ -2,14 +2,16 @@ import express from 'express'
 import { authMiddleware } from '@/middleware/auth-middleware'
 import { errorMiddleware } from '@/middleware/error-middleware'
 import { authRouter } from '@/routers/auth-router'
+import { bookingRouter } from '@/routers/booking-router'
 import { hotelRouter } from '@/routers/hotel-router'
+import { reviewRouter } from '@/routers/review-router'
 
 const app = express()
 app.use(express.json())
 
 const PORT = process.env.PORT
 
-const routers = [authRouter, hotelRouter]
+const routers = [authRouter, hotelRouter, bookingRouter, reviewRouter]
 
 app.use((req, res, next) => {
 	const start = process.hrtime.bigint()

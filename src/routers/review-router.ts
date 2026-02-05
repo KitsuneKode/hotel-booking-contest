@@ -4,7 +4,7 @@ import { ErrorCodes } from '@/constants'
 import { prisma } from '@/db'
 import type { Hotels } from '@/generated/prisma/client'
 import { createReviewSchema } from '@/types'
-import { errorResponse, successResponse } from '@/utils'
+import { AppError, errorResponse, successResponse } from '@/utils'
 
 const router = Router()
 
@@ -32,7 +32,7 @@ router.post('/reviews', async (req, res, next) => {
 		}
 
 		const { rating, comment, bookingId } = reviewData
-		await prisma.$transaction(async (tx) => {
+		const review = await prisma.$transaction(async (tx) => {
 			const booking = await tx.bookings.findUnique({
 				where: { id: bookingId },
 				include: {
@@ -41,26 +41,22 @@ router.post('/reviews', async (req, res, next) => {
 			})
 
 			if (!booking) {
-				res.status(404).json(errorResponse(ErrorCodes.BOOKING_NOT_FOUND))
-				return
+				throw new AppError(ErrorCodes.BOOKING_NOT_FOUND)
 			}
 
 			if (booking.userId !== req.userId) {
-				res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
-				return
+				throw new AppError(ErrorCodes.FORBIDDEN)
 			}
 
 			if (
 				booking.checkOutDate.getTime() > today.getTime() ||
 				booking.status !== STATUS.confirmed
 			) {
-				res.status(400).json(errorResponse(ErrorCodes.BOOKING_NOT_ELIGIBLE))
-				return
+				throw new AppError(ErrorCodes.BOOKING_NOT_ELIGIBLE)
 			}
 
 			if (booking.reviews) {
-				res.status(400).json(errorResponse(ErrorCodes.ALREADY_REVIEWED))
-				return
+				throw new AppError(ErrorCodes.ALREADY_REVIEWED)
 			}
 
 			const hotels = await tx.$queryRaw<Hotels[]>`
@@ -70,8 +66,7 @@ router.post('/reviews', async (req, res, next) => {
     `
 			const hotel = hotels[0]
 			if (!hotel) {
-				res.json(400).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))
-				return
+				throw new AppError(ErrorCodes.HOTEL_NOT_FOUND)
 			}
 
 			const newReview = await tx.reviews.create({
@@ -106,9 +101,9 @@ router.post('/reviews', async (req, res, next) => {
 					totalReviews: stats._count.id,
 				},
 			})
-
-			res.status(201).json(successResponse(newReview))
+			return newReview
 		})
+		res.status(201).json(successResponse(review))
 	} catch (error) {
 		next(error)
 	}

@@ -4,7 +4,7 @@ import { ErrorCodes } from '@/constants'
 import { prisma } from '@/db'
 import type { Bookings, Rooms } from '@/generated/prisma/client'
 import { bookingSchema, searchBookingsQuerySchema } from '@/types'
-import { errorResponse, successResponse } from '@/utils'
+import { AppError, errorResponse, successResponse } from '@/utils'
 
 const router = Router()
 
@@ -28,6 +28,13 @@ router.post('/bookings', async (req, res, next) => {
 		return
 	}
 
+	const userRole = req.role
+	const userId = req.userId
+
+	if (!userId) {
+		throw new Error('Auth Bypass Error')
+	}
+
 	try {
 		const { guests, roomId, checkInDate, checkOutDate } = bookingData
 		const today = new Date()
@@ -39,8 +46,7 @@ router.post('/bookings', async (req, res, next) => {
 			res.status(400).json(errorResponse(ErrorCodes.INVALID_DATES))
 			return
 		}
-
-		await prisma.$transaction(async (tx) => {
+		const newBooking = await prisma.$transaction(async (tx) => {
 			// Check room availability
 			const rooms = await tx.$queryRaw<LockedRoom[]>`
             SELECT r.*, h."ownerId"
@@ -52,21 +58,11 @@ router.post('/bookings', async (req, res, next) => {
 			const room = rooms[0]
 
 			if (!room) {
-				res.status(404).json(errorResponse(ErrorCodes.ROOM_NOT_FOUND))
-				return
-			}
-
-			const userRole = req.role
-			const userId = req.userId
-
-			if (!userId) {
-				res.status(401).json(errorResponse(ErrorCodes.UNAUTHORIZED))
-				return
+				throw new AppError(ErrorCodes.ROOM_NOT_FOUND)
 			}
 
 			if (userRole === 'owner' && room.ownerId === userId) {
-				res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
-				return
+				throw new AppError(ErrorCodes.FORBIDDEN)
 			}
 
 			const overlappingBookings = await tx.bookings.findFirst({
@@ -78,13 +74,11 @@ router.post('/bookings', async (req, res, next) => {
 			})
 
 			if (overlappingBookings) {
-				res.status(400).json(errorResponse(ErrorCodes.ROOM_NOT_AVAILABLE))
-				return
+				throw new AppError(ErrorCodes.ROOM_NOT_AVAILABLE)
 			}
 
 			if (guests > room.maxOccupancy) {
-				res.status(400).json(errorResponse(ErrorCodes.INVALID_CAPACITY))
-				return
+				throw new AppError(ErrorCodes.INVALID_CAPACITY)
 			}
 
 			const totalNights =
@@ -94,7 +88,7 @@ router.post('/bookings', async (req, res, next) => {
 
 			console.log('totalPrice and totalNights', { totalNights, totalPrice })
 
-			const newBooking = await tx.bookings.create({
+			return await tx.bookings.create({
 				data: {
 					roomId,
 					guests,
@@ -109,15 +103,32 @@ router.post('/bookings', async (req, res, next) => {
 					updated_at: true,
 				},
 			})
-
-			res.status(201).json(successResponse(newBooking))
 		})
+		res.status(201).json(successResponse(newBooking))
 	} catch (error) {
+		if (error instanceof AppError) {
+			switch (error.code) {
+				case ErrorCodes.ROOM_NOT_FOUND:
+					return res.status(404).json(errorResponse(ErrorCodes.ROOM_NOT_FOUND))
+				case ErrorCodes.ROOM_NOT_AVAILABLE:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.ROOM_NOT_AVAILABLE))
+				case ErrorCodes.INVALID_CAPACITY:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.INVALID_CAPACITY))
+				case ErrorCodes.FORBIDDEN:
+					return res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
+				default:
+					return next(error)
+			}
+		}
 		next(error)
 	}
 })
 
-router.get('/bookings', async (req, res, next) => {
+router.get('/bookings', async (req, res) => {
 	const { success, data: searchBookingsData } =
 		searchBookingsQuerySchema.safeParse(req.query)
 
@@ -126,65 +137,62 @@ router.get('/bookings', async (req, res, next) => {
 		return
 	}
 
-	try {
-		const userId = req.userId
-		const { status } = searchBookingsData
-		if (!userId) {
-			res.status(401).json(errorResponse(ErrorCodes.UNAUTHORIZED))
-			return
-		}
+	const userId = req.userId
 
-		// Using raw SQL query
-		// const bookings = await prisma.$queryRaw<TypedBooking[]>`
-		//             SELECT  b.id,
-		//                     b."roomId",
-		//                     b."hotelId",
-		//                     r."roomNumber",
-		//                     r."roomType",
-		//                     b."checkInDate",
-		//                     b."checkOutDate",
-		//                     b.guests,
-		//                     b."totalPrice",
-		//                     b.status,
-		//                     b."bookingDate",
-		//                     h.name AS "hotelName"
-		//             FROM bookings b
-		//             JOIN hotels h ON h.id = b."hotelId"
-		//             JOIN rooms r ON r.id = b."roomId"
-		//             WHERE b."userId" = ${userId} AND status = ${status}
-		// `
+	const { status } = searchBookingsData
 
-		const rawBookings = await prisma.bookings.findMany({
-			where: { userId, status },
-			include: {
-				hotel: { select: { name: true } },
-				room: { select: { roomType: true, roomNumber: true } },
-			},
-			omit: {
-				created_at: true,
-				updated_at: true,
-			},
-		})
-
-		const formattedBookings = rawBookings.map((b) => ({
-			id: b.id,
-			roomId: b.roomId,
-			hotelId: b.hotelId,
-			hotelName: b.hotel.name,
-			roomNumber: b.room.roomNumber,
-			roomType: b.room.roomType,
-			checkInDate: b.checkInDate,
-			checkOutDate: b.checkOutDate,
-			guests: b.guests,
-			totalPrice: b.totalPrice,
-			status: b.status,
-			bookingDate: b.bookingDate,
-		}))
-
-		res.status(200).json(successResponse(formattedBookings))
-	} catch (error) {
-		next(error)
+	if (!userId) {
+		throw new Error('Auth Bypass Error')
 	}
+
+	// Using raw SQL query
+	// const bookings = await prisma.$queryRaw<TypedBooking[]>`
+	//             SELECT  b.id,
+	//                     b."roomId",
+	//                     b."hotelId",
+	//                     r."roomNumber",
+	//                     r."roomType",
+	//                     b."checkInDate",
+	//                     b."checkOutDate",
+	//                     b.guests,
+	//                     b."totalPrice",
+	//                     b.status,
+	//                     b."bookingDate",
+	//                     h.name AS "hotelName"
+	//             FROM bookings b
+	//             JOIN hotels h ON h.id = b."hotelId"
+	//             JOIN rooms r ON r.id = b."roomId"
+	//             WHERE b."userId" = ${userId} AND status = ${status}
+	// `
+
+	const rawBookings = await prisma.bookings.findMany({
+		where: { userId, status },
+		include: {
+			hotel: { select: { name: true } },
+			room: { select: { roomType: true, roomNumber: true } },
+		},
+		omit: {
+			created_at: true,
+			updated_at: true,
+		},
+	})
+
+	const formattedBookings = rawBookings.map((b) => ({
+		id: b.id,
+		roomId: b.roomId,
+		hotelId: b.hotelId,
+		hotelName: b.hotel.name,
+		roomNumber: b.room.roomNumber,
+		roomType: b.room.roomType,
+		checkInDate: b.checkInDate,
+		checkOutDate: b.checkOutDate,
+		guests: b.guests,
+		totalPrice: b.totalPrice,
+		status: b.status,
+		bookingDate: b.bookingDate,
+	}))
+
+	return res.status(200).json(successResponse(formattedBookings))
 })
 
 router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
@@ -199,7 +207,7 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 		// 	return
 		// }
 
-		await prisma.$transaction(async (tx) => {
+		const cancelledBooking = await prisma.$transaction(async (tx) => {
 			// Check room availability
 			const bookings = await tx.$queryRaw<Bookings[]>`
             SELECT *
@@ -210,38 +218,31 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 			const booking = bookings[0]
 
 			if (!booking) {
-				res.status(404).json(errorResponse(ErrorCodes.BOOKING_NOT_FOUND))
-				return
+				throw new Error(ErrorCodes.BOOKING_NOT_FOUND)
 			}
 
 			const userId = req.userId
 
 			if (!userId) {
-				res.status(401).json(errorResponse(ErrorCodes.UNAUTHORIZED))
-				return
+				throw new Error('Auth Bypass Error')
 			}
 
 			if (booking.userId !== userId) {
-				res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
-				return
+				throw new Error(ErrorCodes.FORBIDDEN)
 			}
 
 			if (booking.status === STATUS.cancelled) {
-				res.status(400).json(errorResponse(ErrorCodes.ALREADY_CANCELLED))
-				return
+				throw new Error(ErrorCodes.ALREADY_CANCELLED)
 			}
 
 			const hoursBeforeCheckIn =
 				(booking.checkInDate.getTime() - today.getTime()) / (1000 * 60 * 60)
 
 			if (hoursBeforeCheckIn < 24) {
-				res
-					.status(400)
-					.json(errorResponse(ErrorCodes.CANCELLATION_DEADLINE_PASSED))
-				return
+				throw new Error(ErrorCodes.CANCELLATION_DEADLINE_PASSED)
 			}
 
-			const cancelledBooking = await tx.bookings.update({
+			return await tx.bookings.update({
 				where: {
 					id: bookingId,
 					userId,
@@ -256,10 +257,32 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 					cancelledAt: true,
 				},
 			})
-
-			res.status(200).json(successResponse(cancelledBooking))
 		})
-	} catch (error) {
+
+		return res.status(200).json(successResponse(cancelledBooking))
+	} catch (error: unknown) {
+		if (error instanceof AppError) {
+			switch (error.code) {
+				case ErrorCodes.CANCELLATION_DEADLINE_PASSED:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.CANCELLATION_DEADLINE_PASSED))
+				case ErrorCodes.BOOKING_NOT_FOUND:
+					return res
+						.status(404)
+						.json(errorResponse(ErrorCodes.BOOKING_NOT_FOUND))
+				case ErrorCodes.FORBIDDEN:
+					return res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
+				case ErrorCodes.ALREADY_CANCELLED:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.ALREADY_CANCELLED))
+
+				default:
+					next(error)
+			}
+		}
+
 		next(error)
 	}
 })

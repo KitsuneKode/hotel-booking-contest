@@ -5,11 +5,12 @@ import { authRouter } from '@/routers/auth-router'
 import { bookingRouter } from '@/routers/booking-router'
 import { hotelRouter } from '@/routers/hotel-router'
 import { reviewRouter } from '@/routers/review-router'
+import config from '@/utils/config'
 
 const app = express()
 app.use(express.json())
 
-const PORT = process.env.PORT
+const { PORT } = config
 
 const routers = [authRouter, hotelRouter, bookingRouter, reviewRouter]
 

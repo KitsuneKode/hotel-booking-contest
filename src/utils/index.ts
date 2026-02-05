@@ -15,3 +15,15 @@ export const successResponse = (data: object) => {
 		error: null,
 	}
 }
+
+export class AppError extends Error {
+	public readonly code: ErrorCode
+
+	constructor(code: ErrorCode, message?: string) {
+		super(code || message)
+		this.code = code
+
+		Object.setPrototypeOf(this, new.target.prototype)
+		Error.captureStackTrace(this)
+	}
+}

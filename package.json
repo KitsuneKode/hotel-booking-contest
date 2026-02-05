@@ -1,6 +1,6 @@
 {
 	"name": "hotel-booking",
-	"module": "src/index.ts",
+	"module": "src/app.ts",
 	"type": "module",
 	"private": true,
 	"scripts": {

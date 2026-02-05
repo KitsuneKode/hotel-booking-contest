@@ -10,19 +10,14 @@ import {
 	type HotelSearchResult,
 	searchHotelsQuerySchema,
 } from '@/types'
-import { errorResponse, successResponse } from '@/utils'
+import { AppError, errorResponse, successResponse } from '@/utils'
 
 const router = Router()
 
 router.post('/hotels', authorizeRole('owner'), async (req, res, next) => {
-	const {
-		success,
-		data: hotelData,
-		error,
-	} = createHotelSchema.safeParse(req.body)
+	const { success, data: hotelData } = createHotelSchema.safeParse(req.body)
 
 	if (!success) {
-		console.error(error)
 		res.status(400).json(errorResponse(ErrorCodes.INVALID_REQUEST))
 		return
 	}
@@ -32,7 +27,7 @@ router.post('/hotels', authorizeRole('owner'), async (req, res, next) => {
 		const userId = req.userId
 
 		if (!userId) {
-			throw new Error(ErrorCodes.UNAUTHORIZED)
+			throw new Error('Auth Bypass error')
 		}
 
 		const newHotel = await prisma.hotels.create({
@@ -74,10 +69,10 @@ router.post(
 			const userId = req.userId
 
 			if (!userId) {
-				throw new Error(ErrorCodes.UNAUTHORIZED)
+				throw new Error('Auth Bypass error')
 			}
 
-			await prisma.$transaction(async (tx) => {
+			const newRoom = await prisma.$transaction(async (tx) => {
 				const existingHotel = await tx.hotels.findUnique({
 					where: {
 						id: hotelId,
@@ -85,14 +80,12 @@ router.post(
 				})
 
 				if (!existingHotel) {
-					res.status(404).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))
-					return
+					throw new AppError(ErrorCodes.HOTEL_NOT_FOUND)
 				} else if (existingHotel.ownerId !== userId) {
-					res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
-					return
+					throw new AppError(ErrorCodes.FORBIDDEN)
 				}
 
-				const newRoom = await tx.rooms.create({
+				return await tx.rooms.create({
 					data: {
 						roomType,
 						roomNumber,
@@ -105,13 +98,25 @@ router.post(
 						updated_at: true,
 					},
 				})
-				res.status(201).json(successResponse(newRoom))
 			})
+			return res.status(201).json(successResponse(newRoom))
 		} catch (error) {
 			if (error instanceof PrismaClientKnownRequestError) {
 				if (error.code === 'P2002') {
 					res.status(400).json(errorResponse(ErrorCodes.ROOM_ALREADY_EXISTS))
 					return
+				}
+			}
+			if (error instanceof AppError) {
+				switch (error.code) {
+					case ErrorCodes.HOTEL_NOT_FOUND:
+						res.status(404).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))
+						return
+					case ErrorCodes.FORBIDDEN:
+						res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
+						return
+					default:
+						return next(error)
 				}
 			}
 			next(error)

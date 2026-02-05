@@ -105,6 +105,30 @@ router.post('/reviews', async (req, res, next) => {
 		})
 		res.status(201).json(successResponse(review))
 	} catch (error) {
+		if (error instanceof AppError) {
+			switch (error.code) {
+				case ErrorCodes.BOOKING_NOT_FOUND:
+					return res
+						.status(404)
+						.json(errorResponse(ErrorCodes.BOOKING_NOT_FOUND))
+				case ErrorCodes.FORBIDDEN:
+					return res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
+
+				case ErrorCodes.BOOKING_NOT_ELIGIBLE:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.BOOKING_NOT_ELIGIBLE))
+
+				case ErrorCodes.HOTEL_NOT_FOUND:
+					return res.status(404).json(errorResponse(ErrorCodes.HOTEL_NOT_FOUND))
+				case ErrorCodes.ALREADY_REVIEWED:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.ALREADY_REVIEWED))
+				default:
+					return next(error)
+			}
+		}
 		next(error)
 	}
 })

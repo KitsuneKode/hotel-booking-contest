@@ -218,7 +218,7 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 			const booking = bookings[0]
 
 			if (!booking) {
-				throw new Error(ErrorCodes.BOOKING_NOT_FOUND)
+				throw new AppError(ErrorCodes.BOOKING_NOT_FOUND)
 			}
 
 			const userId = req.userId
@@ -228,18 +228,18 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 			}
 
 			if (booking.userId !== userId) {
-				throw new Error(ErrorCodes.FORBIDDEN)
+				throw new AppError(ErrorCodes.FORBIDDEN)
 			}
 
 			if (booking.status === STATUS.cancelled) {
-				throw new Error(ErrorCodes.ALREADY_CANCELLED)
+				throw new AppError(ErrorCodes.ALREADY_CANCELLED)
 			}
 
 			const hoursBeforeCheckIn =
 				(booking.checkInDate.getTime() - today.getTime()) / (1000 * 60 * 60)
 
 			if (hoursBeforeCheckIn < 24) {
-				throw new Error(ErrorCodes.CANCELLATION_DEADLINE_PASSED)
+				throw new AppError(ErrorCodes.CANCELLATION_DEADLINE_PASSED)
 			}
 
 			return await tx.bookings.update({
@@ -263,6 +263,11 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 	} catch (error: unknown) {
 		if (error instanceof AppError) {
 			switch (error.code) {
+				case ErrorCodes.ALREADY_CANCELLED:
+					return res
+						.status(400)
+						.json(errorResponse(ErrorCodes.ALREADY_CANCELLED))
+
 				case ErrorCodes.CANCELLATION_DEADLINE_PASSED:
 					return res
 						.status(400)
@@ -273,10 +278,6 @@ router.put('/bookings/:bookingId/cancel', async (req, res, next) => {
 						.json(errorResponse(ErrorCodes.BOOKING_NOT_FOUND))
 				case ErrorCodes.FORBIDDEN:
 					return res.status(403).json(errorResponse(ErrorCodes.FORBIDDEN))
-				case ErrorCodes.ALREADY_CANCELLED:
-					return res
-						.status(400)
-						.json(errorResponse(ErrorCodes.ALREADY_CANCELLED))
 
 				default:
 					next(error)
